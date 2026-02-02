@@ -1,0 +1,24 @@
+# Claude Code local files
+CLAUDE.md
+.claude/settings.json
+.claude/todos/
+.claude/cache/
+.claude/hooks/
+.claude/plans/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# uv lock file (generated)
+uv.lock
+
+# Cache
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
