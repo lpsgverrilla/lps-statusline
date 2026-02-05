@@ -105,6 +105,7 @@ parse_model() {
     local model_str="$1"
     local display="$2"
     local model_name=""
+    local version=""
 
     # Convert to lowercase for matching
     local lower_model=$(echo "$model_str" | tr '[:upper:]' '[:lower:]')
@@ -122,7 +123,30 @@ parse_model() {
         model_name="${display:-unknown}"
     fi
 
-    echo "$model_name"
+    # Extract version from display name (e.g., "Claude Opus 4.6" → "4.6")
+    if [ -n "$display" ]; then
+        version=$(echo "$display" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    fi
+
+    # Fallback: extract version from model_id (e.g., "claude-opus-4-6" → "4.6")
+    if [ -z "$version" ] && [ -n "$model_str" ] && [ "$model_name" != "${display:-unknown}" ]; then
+        # Strip trailing date suffix (8+ consecutive digits) for clean parsing
+        local clean_id=$(echo "$lower_model" | sed -E 's/-[0-9]{8,}$//')
+
+        # Try: version after family name (e.g., opus-4-6 → 4.6, sonnet-4-5 → 4.5)
+        version=$(echo "$clean_id" | sed -n "s/.*${model_name}-//p" | grep -oE '^[0-9]+(-[0-9]+)?' | tr '-' '.')
+        # Try: version before family name (e.g., 3-5-sonnet → 3.5, 3-opus → 3)
+        if [ -z "$version" ]; then
+            version=$(echo "$clean_id" | sed -n "s/-${model_name}.*//p" | grep -oE '[0-9]+(-[0-9]+)?$' | tr '-' '.')
+        fi
+    fi
+
+    # Combine: e.g., "opus4.6", "sonnet4.5"
+    if [ -n "$version" ]; then
+        echo "${model_name}${version}"
+    else
+        echo "$model_name"
+    fi
 }
 
 MODEL_FORMATTED=$(parse_model "$model_id" "$model_display")
