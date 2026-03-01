@@ -208,11 +208,17 @@ def format_statusline(usage_data):
     else:
         parts.append("sonnet:null")
 
-    # Extra usage indicator
-    if usage_data.get("extra_usage"):
-        parts.append("extra:true")
-    else:
-        parts.append("extra:false")
+    # Extra usage indicator — only true when actually consuming extra usage
+    # (a normal limit is at/above 100%), not just because the object exists
+    eu = usage_data.get("extra_usage")
+    actually_in_extra = False
+    if eu:
+        fh = usage_data.get("five_hour")
+        sd = usage_data.get("seven_day")
+        fh_over = fh and fh.get("utilization", 0) >= 100
+        sd_over = sd and sd.get("utilization", 0) >= 100
+        actually_in_extra = fh_over or sd_over
+    parts.append(f"extra:{str(actually_in_extra).lower()}")
 
     # Iguana necktie field (sanitized to prevent output format corruption)
     iguana_val = usage_data.get("iguana_necktie")
