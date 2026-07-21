@@ -3,11 +3,13 @@
 # LPS-STATUSLINE: Custom Status Line for Claude Code
 # ═══════════════════════════════════════════════════════════════════════════════
 # A rich, informative status line showing:
-#   • Model name (opus/sonnet/haiku) with color coding
+#   • Model name (fable/opus/sonnet/haiku + version) with color coding
+#   • Reasoning effort level, color-coded by tier
 #   • Git repo name, branch, and file change count
 #   • Context window usage percentage
-#   • Claude.ai usage quota (5-hour and 7-day limits)
+#   • Usage quota (5-hour and 7-day limits) from Claude Code's native data
 #   • Consumption pace indicator
+#   • Fast mode indicator (⚡)
 #   • User's last message (second line)
 #
 # Theme: Gruvbox Dark (edit colors below to customize)
@@ -22,6 +24,13 @@ if ! echo "$input" | jq -e . >/dev/null 2>&1; then
     printf "invalid input"
     exit 0
 fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# User config
+# ─────────────────────────────────────────────────────────────────────────────
+# Show 🚨🚨🚨 when a usage window is exhausted (>=100%). Off by default;
+# set to 1 here or export LPS_STATUSLINE_EXTRA_USAGE=1 to enable.
+SHOW_EXTRA_USAGE="${LPS_STATUSLINE_EXTRA_USAGE:-0}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ANSI Color Codes - Gruvbox Dark Theme
@@ -84,19 +93,33 @@ SEP="${GRV_GRAY} | ${RESET}"
 # Use IFS=$'\t' to split only on tabs (display_name may contain spaces)
 # IMPORTANT: Use "_" placeholder for empty strings to prevent bash read from
 # collapsing consecutive tabs (empty fields get skipped otherwise)
-IFS=$'\t' read -r cwd model_id model_display ctx_size < <(
+IFS=$'\t' read -r cwd model_id model_display ctx_size effort_level five_used five_reset seven_used seven_reset fast_mode ctx_used_pct < <(
     echo "$input" | jq -r '
         [
             ((.workspace.current_dir // .cwd // "") | if . == "" then "_" else . end),
             ((.model.id // "") | if . == "" then "_" else . end),
             ((.model.display_name // "") | if . == "" then "_" else . end),
-            (.context_window.context_window_size // 200000)
+            (.context_window.context_window_size // 200000),
+            ((.effort.level // "") | if . == "" then "_" else . end),
+            ((.rate_limits.five_hour.used_percentage // "") | if . == "" then "_" else . end),
+            ((.rate_limits.five_hour.resets_at // "") | if . == "" then "_" else . end),
+            ((.rate_limits.seven_day.used_percentage // "") | if . == "" then "_" else . end),
+            ((.rate_limits.seven_day.resets_at // "") | if . == "" then "_" else . end),
+            (.fast_mode // false),
+            ((.context_window.used_percentage // "") | if . == "" then "_" else . end)
         ] | @tsv'
 )
 # Convert placeholders back to empty strings
 [ "$cwd" = "_" ] && cwd=""
 [ "$model_id" = "_" ] && model_id=""
 [ "$model_display" = "_" ] && model_display=""
+[ "$effort_level" = "_" ] && effort_level=""
+[ "$five_used" = "_" ] && five_used=""
+[ "$five_reset" = "_" ] && five_reset=""
+[ "$seven_used" = "_" ] && seven_used=""
+[ "$seven_reset" = "_" ] && seven_reset=""
+[ "$ctx_used_pct" = "_" ] && ctx_used_pct=""
+ctx_used_pct=${ctx_used_pct%.*}   # truncate decimals
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Parse Model Name (opus/sonnet/haiku)
@@ -108,11 +131,16 @@ parse_model() {
     local version=""
 
     # Convert to lowercase for matching
-    local lower_model=$(echo "$model_str" | tr '[:upper:]' '[:lower:]')
-    local lower_display=$(echo "$display" | tr '[:upper:]' '[:lower:]')
+    local lower_model lower_display
+    lower_model=$(echo "$model_str" | tr '[:upper:]' '[:lower:]')
+    lower_display=$(echo "$display" | tr '[:upper:]' '[:lower:]')
 
     # Determine model family
-    if [[ "$lower_model" == *"opus"* ]] || [[ "$lower_display" == *"opus"* ]]; then
+    if [[ "$lower_model" == *"fable"* ]] || [[ "$lower_display" == *"fable"* ]]; then
+        model_name="fable"
+    elif [[ "$lower_model" == *"mythos"* ]] || [[ "$lower_display" == *"mythos"* ]]; then
+        model_name="mythos"
+    elif [[ "$lower_model" == *"opus"* ]] || [[ "$lower_display" == *"opus"* ]]; then
         model_name="opus"
     elif [[ "$lower_model" == *"haiku"* ]] || [[ "$lower_display" == *"haiku"* ]]; then
         model_name="haiku"
@@ -123,15 +151,16 @@ parse_model() {
         model_name="${display:-unknown}"
     fi
 
-    # Extract version from display name (e.g., "Claude Opus 4.6" → "4.6")
+    # Extract version from display name (e.g., "Claude Opus 4.6" → "4.6", "Fable 5" → "5")
     if [ -n "$display" ]; then
-        version=$(echo "$display" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        version=$(echo "$display" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
     fi
 
     # Fallback: extract version from model_id (e.g., "claude-opus-4-6" → "4.6")
     if [ -z "$version" ] && [ -n "$model_str" ] && [ "$model_name" != "${display:-unknown}" ]; then
         # Strip trailing date suffix (8+ consecutive digits) for clean parsing
-        local clean_id=$(echo "$lower_model" | sed -E 's/-[0-9]{8,}$//')
+        local clean_id
+        clean_id=$(echo "$lower_model" | sed -E 's/-[0-9]{8,}$//')
 
         # Try: version after family name (e.g., opus-4-6 → 4.6, sonnet-4-5 → 4.5)
         version=$(echo "$clean_id" | sed -n "s/.*${model_name}-//p" | grep -oE '^[0-9]+(-[0-9]+)?' | tr '-' '.')
@@ -155,6 +184,7 @@ MODEL_FORMATTED=$(parse_model "$model_id" "$model_display")
 get_model_color() {
     local model="$1"
     case "$model" in
+        fable*|mythos*) echo "$GRV_PURPLE" ;;  # Purple for Mythos-class tier
         opus*) echo "$GRV_ORANGE" ;;      # Warm orange for premium model
         sonnet*) echo "$GRV_BLUE" ;;      # Muted blue for mid-tier
         haiku*) echo "$GRV_AQUA" ;;       # Aqua for fast model
@@ -162,6 +192,27 @@ get_model_color() {
     esac
 }
 MODEL_COLOR=$(get_model_color "$MODEL_FORMATTED")
+
+# Effort level suffix: (low|medium|high|xhigh|max), lightly color-coded by tier
+# Omitted entirely when the model doesn't support effort (field absent)
+EFFORT_SECTION=""
+if [ -n "$effort_level" ]; then
+    case "$effort_level" in
+        low)    EFFORT_COLOR="$GRV_GRAY" ;;
+        medium) EFFORT_COLOR="$GRV_AQUA" ;;
+        high)   EFFORT_COLOR="$GRV_YELLOW" ;;
+        xhigh)  EFFORT_COLOR="$GRV_ORANGE" ;;
+        max)    EFFORT_COLOR="$GRV_RED" ;;
+        *)      EFFORT_COLOR="$GRV_GRAY" ;;
+    esac
+    EFFORT_SECTION="${DIM}${GRV_GRAY}(${RESET}${EFFORT_COLOR}${effort_level}${RESET}${DIM}${GRV_GRAY})${RESET}"
+fi
+
+# Fast mode indicator: ⚡ only when fast mode is active
+FAST_SECTION=""
+if [ "$fast_mode" = "true" ]; then
+    FAST_SECTION="⚡"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Git Information (repo name, branch, file count)
@@ -289,15 +340,22 @@ if [ -n "$ctx_size" ] && [ "$ctx_size" -gt 0 ] 2>/dev/null; then
 
         if [ "$context_length" -gt 0 ]; then
             pct=$((context_length * 100 / ctx_size))
+        elif [[ "$ctx_used_pct" =~ ^[0-9]+$ ]]; then
+            # Fall back to Claude Code's own pre-computed percentage
+            pct=$ctx_used_pct
         else
             # At conversation start, use baseline estimate
             pct=$((baseline * 100 / ctx_size))
             pct_prefix="~"
         fi
     else
-        # Transcript not available yet - show baseline estimate
-        pct=$((baseline * 100 / ctx_size))
-        pct_prefix="~"
+        # Transcript not available yet
+        if [[ "$ctx_used_pct" =~ ^[0-9]+$ ]]; then
+            pct=$ctx_used_pct
+        else
+            pct=$((baseline * 100 / ctx_size))
+            pct_prefix="~"
+        fi
     fi
 
     # Cap at 100%
@@ -345,145 +403,113 @@ if [[ -n "$transcript_path" && -f "$transcript_path" ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Claude.ai Usage Quota + Reset Time
-# Format: ⏱️ 31% 2h40m (5h limit with colored percentage and cyan reset time)
+# Usage Quota + Reset Time (native rate_limits from Claude Code's JSON input)
+# Format: 31% ⏱️ 2h40m (5h limit with colored percentage and aqua countdown)
 # 7d section shown separately only if > 65%
-# Also parses: sonnet percentage, extra_usage flag, iguana_necktie value
+# 🚨 extra-usage sirens are opt-in via SHOW_EXTRA_USAGE (see User config)
 # ─────────────────────────────────────────────────────────────────────────────
 USAGE_SECTION=""
 SEVEN_DAY_SECTION=""
-SONNET_SECTION=""
 EXTRA_SECTION=""
-IGUANA_SECTION=""
 PACE_SECTION=""
 
-if command -v claude-usage-status &>/dev/null; then
-    usage_output=$(claude-usage-status 2>/dev/null)
+if [ -n "$five_used" ]; then
+    # Truncate decimals (used_percentage may be fractional) and validate
+    five_pct=${five_used%.*}
+    [[ "$five_pct" =~ ^[0-9]+$ ]] || five_pct=0
+    seven_pct=${seven_used%.*}
+    [[ "$seven_pct" =~ ^[0-9]+$ ]] || seven_pct=0
 
-    if [ "$usage_output" = "ERROR" ]; then
-        USAGE_SECTION="${GRV_RED}error${RESET}"
-    elif [ -n "$usage_output" ]; then
-        # Output format: 5h:18%:3h 24m|7d:36%:3d 2h|sonnet:N|extra:bool|iguana:val
-        # Extract percentages (using POSIX-compatible grep -E instead of GNU grep -P)
-        five_hour=$(echo "$usage_output" | grep -Eo '5h:[0-9.]+%' | head -1)
-        seven_day=$(echo "$usage_output" | grep -Eo '7d:[0-9.]+%' | head -1)
+    # Color based on 5h percentage only (Gruvbox palette)
+    if [ "$five_pct" -lt 50 ]; then
+        USAGE_COLOR="${GRV_GREEN}"
+    elif [ "$five_pct" -lt 75 ]; then
+        USAGE_COLOR="${GRV_YELLOW}"
+    else
+        USAGE_COLOR="${GRV_RED}"
+    fi
 
-        # Extract 5h reset time (the part after 5h:XX%: - handle decimals like 99.5%)
-        five_hour_reset=$(echo "$usage_output" | sed -n 's/.*5h:[0-9.]*%:\([^|]*\).*/\1/p' | head -1)
-
-        # Extract sonnet percentage (sonnet:N or sonnet:null)
-        sonnet_val=$(echo "$usage_output" | sed -n 's/.*sonnet:\([^|]*\).*/\1/p' | head -1)
-
-        # Extract extra usage flag (extra:true or extra:false)
-        extra_val=$(echo "$usage_output" | sed -n 's/.*extra:\([^|]*\).*/\1/p' | head -1)
-
-        # Extract iguana_necktie value (iguana:VALUE or iguana:null)
-        iguana_val=$(echo "$usage_output" | sed -n 's/.*iguana:\([^|]*\).*/\1/p' | head -1)
-
-        if [ -n "$five_hour" ] || [ -n "$seven_day" ]; then
-            # Extract percentage number after colon (5h:33% -> 33, 5h:99.5% -> 99)
-            five_pct=$(echo "$five_hour" | sed 's/.*:\([0-9]*\)[.0-9]*%.*/\1/')
-            seven_pct=$(echo "$seven_day" | sed 's/.*:\([0-9]*\)[.0-9]*%.*/\1/')
-            # Default to 0 if empty
-            [ -z "$five_pct" ] && five_pct=0
-            [ -z "$seven_pct" ] && seven_pct=0
-
-            # Color based on 5h percentage only (Gruvbox palette)
-            if [ "$five_pct" -lt 50 ]; then
-                USAGE_COLOR="${GRV_GREEN}"
-            elif [ "$five_pct" -lt 75 ]; then
-                USAGE_COLOR="${GRV_YELLOW}"
-            else
-                USAGE_COLOR="${GRV_RED}"
-            fi
-
-            # Build 5h section: ⏱️ 2h40m 31%
-            if [ -n "$five_hour_reset" ]; then
-                # Remove extra spaces and format as compact (no spaces in time)
-                reset_formatted=$(echo "$five_hour_reset" | tr -d ' ')
-                USAGE_SECTION="${USAGE_COLOR}${five_pct}%${RESET} ⏱️ ${GRV_AQUA}${reset_formatted}${RESET}"
-            else
-                USAGE_SECTION="⏱️ ${USAGE_COLOR}${five_pct}%${RESET}"
-            fi
-
-            # Build 7d section: only show if > 65%
-            if [[ "$seven_pct" =~ ^[0-9]+$ ]] && [ "$seven_pct" -gt 65 ]; then
-                if [ "$seven_pct" -lt 75 ]; then
-                    SEVEN_DAY_COLOR="${GRV_YELLOW}"
-                else
-                    SEVEN_DAY_COLOR="${GRV_RED}"
-                fi
-                SEVEN_DAY_SECTION="${SEVEN_DAY_COLOR}7d:${seven_pct}%${RESET}"
-            fi
+    # Reset countdown from resets_at (epoch seconds)
+    reset_formatted=""
+    hours_part=0
+    mins_part=0
+    if [[ "$five_reset" =~ ^[0-9]+$ ]]; then
+        now_epoch=$(date +%s)
+        rem_secs=$((five_reset - now_epoch))
+        [ "$rem_secs" -lt 0 ] && rem_secs=0
+        hours_part=$((rem_secs / 3600))
+        mins_part=$(( (rem_secs % 3600) / 60 ))
+        if [ "$hours_part" -gt 0 ]; then
+            reset_formatted="${hours_part}h${mins_part}m"
+        else
+            reset_formatted="${mins_part}m"
         fi
+    fi
 
-        # Sonnet section: show rose + percentage only if sonnet > 65%
-        if [ -n "$sonnet_val" ] && [ "$sonnet_val" != "null" ] && [[ "$sonnet_val" =~ ^[0-9]+$ ]]; then
-            if [ "$sonnet_val" -gt 65 ]; then
-                SONNET_SECTION="${GRV_PURPLE}🌹${sonnet_val}%${RESET}"
-            fi
+    # Build 5h section: 31% ⏱️ 2h40m
+    if [ -n "$reset_formatted" ]; then
+        USAGE_SECTION="${USAGE_COLOR}${five_pct}%${RESET} ⏱️ ${GRV_AQUA}${reset_formatted}${RESET}"
+    else
+        USAGE_SECTION="⏱️ ${USAGE_COLOR}${five_pct}%${RESET}"
+    fi
+
+    # Build 7d section: only show if > 65%
+    if [ "$seven_pct" -gt 65 ]; then
+        if [ "$seven_pct" -lt 75 ]; then
+            SEVEN_DAY_COLOR="${GRV_YELLOW}"
+        else
+            SEVEN_DAY_COLOR="${GRV_RED}"
         fi
+        SEVEN_DAY_SECTION="${SEVEN_DAY_COLOR}7d:${seven_pct}%${RESET}"
+    fi
 
-        # Extra usage section: show 🚨🚨🚨 if extra_usage is true
-        if [ "$extra_val" = "true" ]; then
+    # Extra usage section (opt-in): 🚨🚨🚨 when a usage window is exhausted
+    if [ "$SHOW_EXTRA_USAGE" = "1" ]; then
+        if [ "$five_pct" -ge 100 ] || [ "$seven_pct" -ge 100 ]; then
             EXTRA_SECTION="🚨🚨🚨"
         fi
+    fi
 
-        # Iguana section: 🦎 if null, 💡VALUE💡 if not null
-        if [ "$iguana_val" = "null" ] || [ -z "$iguana_val" ]; then
-            IGUANA_SECTION="🦎"
+    # ─────────────────────────────────────────────────────────────────────────
+    # Pace Indicator: shows if consuming quota at sustainable rate
+    # pace = quota_used_pct / time_elapsed_pct
+    # where time_elapsed_pct = (5 - hours_remaining) / 5
+    # ─────────────────────────────────────────────────────────────────────────
+    if [ -n "$reset_formatted" ]; then
+        # Hours remaining as x100 integer (e.g., 3h24m = 340)
+        hours_remaining_x100=$((hours_part * 100 + mins_part * 100 / 60))
+
+        # time_elapsed_pct = (5 - hours_remaining) / 5
+        # In x100 terms: (500 - hours_remaining_x100) / 5
+        time_elapsed_x100=$(( (500 - hours_remaining_x100) * 100 / 500 ))
+
+        # Edge case: if time_elapsed is 0 or negative (just started), show green
+        if [ "$time_elapsed_x100" -le 5 ]; then
+            PACE_SECTION="🟢"
         else
-            IGUANA_SECTION="💡${iguana_val}💡"
-        fi
+            # pace = quota_used_pct / time_elapsed_pct
+            # Both five_pct and time_elapsed_x100 are percentages (0-100)
+            # pace_x100 = pace * 100 for integer comparison
+            pace_x100=$((five_pct * 100 / time_elapsed_x100))
 
-        # ─────────────────────────────────────────────────────────────────────
-        # Pace Indicator: shows if consuming quota at sustainable rate
-        # pace = quota_used_pct / time_elapsed_pct
-        # where time_elapsed_pct = (5 - hours_remaining) / 5
-        # ─────────────────────────────────────────────────────────────────────
-        if [ -n "$five_hour_reset" ] && [ -n "$five_pct" ]; then
-            # Parse reset time (format: "3h24m" or "2h40m" or "45m" or "4h")
-            hours_part=$(echo "$five_hour_reset" | grep -oE '[0-9]+h' | tr -d 'h')
-            mins_part=$(echo "$five_hour_reset" | grep -oE '[0-9]+m' | tr -d 'm')
-            [ -z "$hours_part" ] && hours_part=0
-            [ -z "$mins_part" ] && mins_part=0
+            # Cap at 500 to prevent overflow with extreme values
+            [ "$pace_x100" -gt 500 ] && pace_x100=500
 
-            # Calculate hours remaining as decimal (e.g., 3h24m = 3.4)
-            # Using bc for floating point, multiply by 100 to work with integers
-            hours_remaining_x100=$((hours_part * 100 + mins_part * 100 / 60))
-
-            # time_elapsed_pct = (5 - hours_remaining) / 5
-            # In x100 terms: (500 - hours_remaining_x100) / 5
-            time_elapsed_x100=$(( (500 - hours_remaining_x100) * 100 / 500 ))
-
-            # Edge case: if time_elapsed is 0 or negative (just started), show green
-            if [ "$time_elapsed_x100" -le 5 ]; then
+            # Determine emoji based on pace (x100 scale: 100 = pace 1.0)
+            if [ "$pace_x100" -lt 50 ]; then
+                PACE_SECTION="💤"
+            elif [ "$pace_x100" -lt 90 ]; then
+                PACE_SECTION="🔵"
+            elif [ "$pace_x100" -lt 105 ]; then
                 PACE_SECTION="🟢"
+            elif [ "$pace_x100" -lt 120 ]; then
+                PACE_SECTION="🟡"
+            elif [ "$pace_x100" -lt 140 ]; then
+                PACE_SECTION="🟠"
+            elif [ "$pace_x100" -lt 170 ]; then
+                PACE_SECTION="🔴"
             else
-                # pace = quota_used_pct / time_elapsed_pct
-                # Both five_pct and time_elapsed_x100 are percentages (0-100)
-                # pace_x100 = pace * 100 for integer comparison
-                pace_x100=$((five_pct * 100 / time_elapsed_x100))
-
-                # Cap at 500 to prevent overflow with extreme values
-                [ "$pace_x100" -gt 500 ] && pace_x100=500
-
-                # Determine emoji based on pace (x100 scale: 100 = pace 1.0)
-                if [ "$pace_x100" -lt 50 ]; then
-                    PACE_SECTION="💤"
-                elif [ "$pace_x100" -lt 90 ]; then
-                    PACE_SECTION="🔵"
-                elif [ "$pace_x100" -lt 105 ]; then
-                    PACE_SECTION="🟢"
-                elif [ "$pace_x100" -lt 120 ]; then
-                    PACE_SECTION="🟡"
-                elif [ "$pace_x100" -lt 140 ]; then
-                    PACE_SECTION="🟠"
-                elif [ "$pace_x100" -lt 170 ]; then
-                    PACE_SECTION="🔴"
-                else
-                    PACE_SECTION="🔥"
-                fi
+                PACE_SECTION="🔥"
             fi
         fi
     fi
@@ -491,14 +517,9 @@ fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Assemble the Status Line
-# Order: iguana | workdir | git | model | context | usage | 7d | sonnet | extra | pace
+# Order: workdir | git | model(effort) | fast | context | usage | 7d | extra | pace
 # ─────────────────────────────────────────────────────────────────────────────
 OUTPUT=""
-
-# Iguana section (MAXIMUM LEFT - always shows 🦎 or 💡value💡)
-if [ -n "$IGUANA_SECTION" ]; then
-    OUTPUT="${IGUANA_SECTION}"
-fi
 
 # Working directory section (colored by Claude project markers)
 if [ -n "$WORKDIR_SECTION" ]; then
@@ -521,7 +542,15 @@ if [ -n "$MODEL_FORMATTED" ]; then
     if [ -n "$OUTPUT" ]; then
         OUTPUT="${OUTPUT}${SEP}"
     fi
-    OUTPUT="${OUTPUT}${MODEL_COLOR}${MODEL_FORMATTED}${RESET}"
+    OUTPUT="${OUTPUT}${MODEL_COLOR}${MODEL_FORMATTED}${RESET}${EFFORT_SECTION}"
+fi
+
+# Fast mode section (⚡ only when fast mode is active)
+if [ -n "$FAST_SECTION" ]; then
+    if [ -n "$OUTPUT" ]; then
+        OUTPUT="${OUTPUT}${SEP}"
+    fi
+    OUTPUT="${OUTPUT}${FAST_SECTION}"
 fi
 
 # Context section
@@ -548,15 +577,7 @@ if [ -n "$SEVEN_DAY_SECTION" ]; then
     OUTPUT="${OUTPUT}${SEVEN_DAY_SECTION}"
 fi
 
-# Sonnet section (only if sonnet > 65%): 🌹N%
-if [ -n "$SONNET_SECTION" ]; then
-    if [ -n "$OUTPUT" ]; then
-        OUTPUT="${OUTPUT}${SEP}"
-    fi
-    OUTPUT="${OUTPUT}${SONNET_SECTION}"
-fi
-
-# Extra usage section (only if extra_usage is true): 🚨🚨🚨
+# Extra usage section (opt-in, only when a window is exhausted): 🚨🚨🚨
 if [ -n "$EXTRA_SECTION" ]; then
     if [ -n "$OUTPUT" ]; then
         OUTPUT="${OUTPUT}${SEP}"
