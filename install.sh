@@ -42,10 +42,6 @@ if ! command -v git &>/dev/null; then
     missing_deps+=("git")
 fi
 
-if ! command -v python3 &>/dev/null; then
-    missing_deps+=("python3")
-fi
-
 # Check for missing dependencies first (report all at once)
 if [ ${#missing_deps[@]} -gt 0 ]; then
     echo -e "${RED}Missing required dependencies: ${missing_deps[*]}${NC}"
@@ -162,8 +158,6 @@ echo -e "${YELLOW}Copying files...${NC}"
 mkdir -p "$INSTALL_DIR"
 
 cp "$SCRIPT_DIR/statusline.sh" "$INSTALL_DIR/"
-cp "$SCRIPT_DIR/claude-usage-status" "$INSTALL_DIR/"
-cp -r "$SCRIPT_DIR/usage-fetch" "$INSTALL_DIR/"
 
 # Copy and configure agent
 mkdir -p "$INSTALL_DIR/.claude/agents"
@@ -175,31 +169,8 @@ fi
 
 # Make scripts executable
 chmod +x "$INSTALL_DIR/statusline.sh"
-chmod +x "$INSTALL_DIR/claude-usage-status"
 
 echo -e "${GREEN}✓ Files copied${NC}"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Install Python Dependencies
-# ─────────────────────────────────────────────────────────────────────────────
-echo
-echo -e "${YELLOW}Installing Python dependencies...${NC}"
-
-cd "$INSTALL_DIR/usage-fetch"
-
-if command -v uv &>/dev/null; then
-    echo "Using uv..."
-    uv sync 2>/dev/null || uv pip install -r requirements.txt 2>/dev/null
-    echo -e "${GREEN}✓ Python dependencies installed via uv${NC}"
-elif command -v pip3 &>/dev/null; then
-    echo "Using pip..."
-    pip3 install --user -q -r requirements.txt
-    echo -e "${GREEN}✓ Python dependencies installed via pip${NC}"
-else
-    echo -e "${YELLOW}Warning: Neither uv nor pip found.${NC}"
-    echo "Install dependencies manually:"
-    echo "  pip install -r $INSTALL_DIR/usage-fetch/requirements.txt"
-fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configure Claude Code
@@ -253,16 +224,10 @@ echo -e "${BLUE}═════════════════════�
 echo
 echo -e "${YELLOW}Remaining steps:${NC}"
 echo
-echo "1. Add to your PATH (in ~/.bashrc or ~/.zshrc):"
+echo "1. Restart Claude Code to see the new statusline!"
 echo
-echo -e "   ${CYAN}export PATH=\"\$PATH:$INSTALL_DIR\"${NC}"
-echo
-echo "2. Make sure you're logged into claude.ai in your browser"
-echo
-echo "3. Restart Claude Code to see the new statusline!"
-echo
-echo -e "${YELLOW}Test the installation:${NC}"
-echo "   $INSTALL_DIR/claude-usage-status"
+echo -e "${YELLOW}Note:${NC} usage quota and effort display require Claude Code >= 2.1.214"
+echo "(older versions simply won't show those sections)."
 echo
 echo -e "${YELLOW}To uninstall later:${NC}"
 echo "   $INSTALL_DIR/../lps-statusline/uninstall.sh"

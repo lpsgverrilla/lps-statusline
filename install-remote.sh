@@ -25,7 +25,6 @@ check_deps() {
 
     command -v git &>/dev/null || missing+=("git")
     command -v bash &>/dev/null || missing+=("bash")
-    command -v python3 &>/dev/null || missing+=("python3")
     command -v jq &>/dev/null || missing+=("jq")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
