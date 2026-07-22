@@ -17,7 +17,6 @@ NC='\033[0m' # No Color
 
 DEFAULT_INSTALL_DIR="$HOME/.local/share/lps-statusline"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/claude-code"
 
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
 echo -e "${BLUE}           LPS-STATUSLINE Uninstaller${NC}"
@@ -48,7 +47,6 @@ if [ -n "$INSTALL_DIR" ] && [ -d "$INSTALL_DIR" ]; then
     echo "  • Remove $INSTALL_DIR"
 fi
 echo "  • Remove statusLine config from ~/.claude/settings.json"
-echo "  • Remove cache at $CACHE_DIR"
 echo
 read -rp "Continue with uninstall? [y/N] " confirm
 if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
@@ -64,16 +62,6 @@ if [ -n "$INSTALL_DIR" ] && [ -d "$INSTALL_DIR" ]; then
     echo -e "${YELLOW}Removing installation directory...${NC}"
     rm -rf "$INSTALL_DIR"
     echo -e "${GREEN}✓ Removed $INSTALL_DIR${NC}"
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Remove Cache
-# ─────────────────────────────────────────────────────────────────────────────
-if [ -d "$CACHE_DIR" ]; then
-    echo
-    echo -e "${YELLOW}Removing cache...${NC}"
-    rm -rf "$CACHE_DIR"
-    echo -e "${GREEN}✓ Removed $CACHE_DIR${NC}"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

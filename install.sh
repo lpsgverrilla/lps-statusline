@@ -158,6 +158,7 @@ echo -e "${YELLOW}Copying files...${NC}"
 mkdir -p "$INSTALL_DIR"
 
 cp "$SCRIPT_DIR/statusline.sh" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/uninstall.sh" "$INSTALL_DIR/"
 
 # Copy and configure agent
 mkdir -p "$INSTALL_DIR/.claude/agents"
@@ -169,6 +170,7 @@ fi
 
 # Make scripts executable
 chmod +x "$INSTALL_DIR/statusline.sh"
+chmod +x "$INSTALL_DIR/uninstall.sh"
 
 echo -e "${GREEN}✓ Files copied${NC}"
 
@@ -230,6 +232,5 @@ echo -e "${YELLOW}Note:${NC} usage quota and effort display require Claude Code 
 echo "(older versions simply won't show those sections)."
 echo
 echo -e "${YELLOW}To uninstall later:${NC}"
-echo "   $INSTALL_DIR/../lps-statusline/uninstall.sh"
-echo "   # Or if you moved it: ./uninstall.sh from the repo directory"
+echo "   $INSTALL_DIR/uninstall.sh"
 echo
