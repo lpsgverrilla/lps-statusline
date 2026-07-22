@@ -47,6 +47,7 @@ if [ -n "$INSTALL_DIR" ] && [ -d "$INSTALL_DIR" ]; then
     echo "  • Remove $INSTALL_DIR"
 fi
 echo "  • Remove statusLine config from ~/.claude/settings.json"
+echo "  • Remove the Claude Code skill at ~/.claude/skills/lps-statusline"
 echo
 read -rp "Continue with uninstall? [y/N] " confirm
 if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
@@ -62,6 +63,16 @@ if [ -n "$INSTALL_DIR" ] && [ -d "$INSTALL_DIR" ]; then
     echo -e "${YELLOW}Removing installation directory...${NC}"
     rm -rf "$INSTALL_DIR"
     echo -e "${GREEN}✓ Removed $INSTALL_DIR${NC}"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Remove Customization Skill
+# ─────────────────────────────────────────────────────────────────────────────
+if [ -d "$HOME/.claude/skills/lps-statusline" ]; then
+    echo
+    echo -e "${YELLOW}Removing Claude Code skill...${NC}"
+    rm -rf "$HOME/.claude/skills/lps-statusline"
+    echo -e "${GREEN}✓ Removed ~/.claude/skills/lps-statusline${NC}"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -129,27 +129,6 @@ echo
 echo -e "Installing to: ${BLUE}$INSTALL_DIR${NC}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Choose Subagent Model
-# ─────────────────────────────────────────────────────────────────────────────
-echo
-echo -e "Which model should the statusline-specialist agent use?"
-echo -e "  ${CYAN}1)${NC} sonnet ${GREEN}(recommended)${NC} — Faster, good for most tasks"
-echo -e "  ${CYAN}2)${NC} opus — More thorough, better for complex debugging"
-echo
-read -rp "Choose [1/2, default=1]: " model_choice
-
-case "$model_choice" in
-    2|opus)
-        AGENT_MODEL="opus"
-        ;;
-    *)
-        AGENT_MODEL="sonnet"
-        ;;
-esac
-
-echo -e "Using model: ${CYAN}$AGENT_MODEL${NC}"
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Copy Files
 # ─────────────────────────────────────────────────────────────────────────────
 echo
@@ -159,14 +138,6 @@ mkdir -p "$INSTALL_DIR"
 
 cp "$SCRIPT_DIR/statusline.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/uninstall.sh" "$INSTALL_DIR/"
-
-# Copy and configure agent
-mkdir -p "$INSTALL_DIR/.claude/agents"
-if [ -f "$SCRIPT_DIR/.claude/agents/statusline-specialist.md" ]; then
-    sed "s/^model: sonnet$/model: $AGENT_MODEL/" \
-        "$SCRIPT_DIR/.claude/agents/statusline-specialist.md" \
-        > "$INSTALL_DIR/.claude/agents/statusline-specialist.md"
-fi
 
 # Make scripts executable
 chmod +x "$INSTALL_DIR/statusline.sh"
@@ -214,6 +185,20 @@ else
     echo -e "  ${CYAN}  \"command\": \"$BASH_CMD $INSTALL_DIR/statusline.sh\",${NC}"
     echo -e "  ${CYAN}  \"padding\": 0${NC}"
     echo -e "  ${CYAN}}${NC}"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Install Customization Skill
+# ─────────────────────────────────────────────────────────────────────────────
+# A personal Claude Code skill so Claude can help customize the statusline
+# from any directory. See .claude/skills/lps-statusline/SKILL.md
+echo
+read -rp "Install the Claude Code customization skill? [Y/n] " skill_choice
+if [[ ! "$skill_choice" =~ ^[Nn]$ ]]; then
+    mkdir -p "$HOME/.claude/skills"
+    rm -rf "$HOME/.claude/skills/lps-statusline"
+    cp -r "$SCRIPT_DIR/.claude/skills/lps-statusline" "$HOME/.claude/skills/"
+    echo -e "${GREEN}✓ Skill installed to ~/.claude/skills/lps-statusline${NC}"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

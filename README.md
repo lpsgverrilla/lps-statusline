@@ -178,11 +178,9 @@ macOS ships with bash 3.2, but lps-statusline requires bash 4+. Ensure you're us
 
 Your `~/.claude/settings.json` must use the full path to Homebrew bash in the command field.
 
-### Claude Code Subagent
+### Claude Code Skill
 
-This project includes a **statusline-specialist** subagent for Claude Code. When installed, Claude Code can automatically spawn this specialist agent to help with statusline-related tasks: troubleshooting display issues, debugging data sources, modifying appearance, adding indicators, or fixing calculation errors.
-
-During installation you choose which model the subagent uses (sonnet for speed, opus for complex debugging). The installer copies the agent definition to `~/.local/share/lps-statusline/.claude/agents/`; you can also copy it into any project's `.claude/agents/` folder.
+The installer optionally adds a small skill to `~/.claude/skills/lps-statusline/` so Claude Code can help you customize the statusline (colors, thresholds, new segments) from any directory. Delete that folder to remove it.
 
 ## Credits
 
