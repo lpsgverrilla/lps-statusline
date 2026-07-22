@@ -121,6 +121,32 @@ assert_contains "native used_percentage fallback (no transcript)" "$out" "🧠 3
 out=$(render '{"cwd":"/tmp","model":{"id":"claude-fable-5","display_name":"Fable 5"},"context_window":{"context_window_size":1000000},'$RL'}')
 assert_contains "baseline estimate when nothing available" "$out" "🧠 ~"
 
+# ─── Regressions ──────────────────────────────────────────────────────────────
+
+# R1: backslashes in the user's message must never be escape-expanded
+# (printf %b would truncate at \c, expand \n into extra lines, emit raw \033)
+tmp_transcript=$(mktemp)
+printf '%s\n' '{"type":"user","message":{"content":"check C:\\config and \\now"}}' > "$tmp_transcript"
+out=$(render '{"cwd":"/tmp","transcript_path":"'"$tmp_transcript"'","model":{"id":"claude-fable-5","display_name":"Fable 5"},"context_window":{"context_window_size":1000000}}')
+assert_contains "backslash content survives intact" "$out" 'C:\config and \now'
+line_count=$(printf '%s\n' "$out" | wc -l)
+if [ "$line_count" -eq 2 ]; then
+    PASS=$((PASS + 1)); echo "  ok: output stays exactly two lines"
+else
+    FAIL=$((FAIL + 1)); echo "FAIL: output stays exactly two lines (got $line_count)"
+fi
+rm -f "$tmp_transcript"
+
+# R3: unknown model family must not get its version appended twice
+out=$(render '{"cwd":"/tmp","model":{"id":"claude-neo-2","display_name":"Neo 2"},"context_window":{"context_window_size":200000}}')
+assert_contains "unknown family keeps display name as-is" "$out" "Neo 2"
+assert_not_contains "unknown family version not doubled" "$out" "Neo 22"
+
+# D2: 7d warning renders even when five_hour is absent
+out=$(render '{"cwd":"/tmp","model":{"id":"claude-fable-5","display_name":"Fable 5"},"context_window":{"context_window_size":1000000},"rate_limits":{"seven_day":{"used_percentage":90,"resets_at":'$IN_1D'}}}')
+assert_contains "7d shown without five_hour" "$out" "7d:90%"
+assert_not_contains "no 5h section without five_hour" "$out" "⏱️"
+
 # ─── Robustness ───────────────────────────────────────────────────────────────
 
 out=$(echo 'not json at all' | bash "$STATUSLINE" | sed -e 's/\x1b\[[0-9;]*m//g')
