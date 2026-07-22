@@ -85,12 +85,12 @@ The second line shows your most recent message for context:
 | Emoji | Meaning |
 |-------|---------|
 | 💤 | Very low usage (< 50% of expected) |
-| 🔵 | Below average (50-90%) |
-| 🟢 | On track (90-105%) |
-| 🟡 | Slightly fast (105-120%) |
-| 🟠 | Fast (120-140%) |
-| 🔴 | Very fast (140-170%) |
-| 🔥 | Burning through quota (> 170%) |
+| 🔵 | Below average (50-89%) |
+| 🟢 | On track (90-104%) |
+| 🟡 | Slightly fast (105-119%) |
+| 🟠 | Fast (120-139%) |
+| 🔴 | Very fast (140-169%) |
+| 🔥 | Burning through quota (≥ 170%) |
 
 ## How It Works
 
@@ -146,7 +146,7 @@ The statusline uses Gruvbox Dark theme by default. To customize, edit the color 
 bash tests/render-test.sh
 ```
 
-Feeds fixture JSON payloads (all model families, effort levels, quota states, malformed input) through the script and asserts on the rendered output.
+Feeds fixture JSON payloads (all model families, effort levels, quota states, malformed input) through the script and asserts on the rendered output. Run from the cloned repo — the installer doesn't copy the tests.
 
 ## Troubleshooting
 

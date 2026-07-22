@@ -64,11 +64,11 @@ Line 2: 💬 User's last message here...
 
 **Pace Indicator Scale:**
 - 💤 Very low (<50% of expected rate)
-- 🔵 Below average (50-90%)
-- 🟢 On track (90-105%)
-- 🟡 Slightly fast (105-120%)
-- 🟠 Fast (120-140%)
-- 🔴 Very fast (140-170%)
+- 🔵 Below average (50-89%)
+- 🟢 On track (90-104%)
+- 🟡 Slightly fast (105-119%)
+- 🟠 Fast (120-139%)
+- 🔴 Very fast (140-169%)
 - 🔥 Burning quota (≥170%)
 
 ## Model Parsing
