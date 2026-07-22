@@ -48,23 +48,26 @@ SHOW_EXTRA_USAGE="${LPS_STATUSLINE_EXTRA_USAGE:-0}"
 #   Orange:            #fe8019 (warm accent)
 #   Gray:              #928374 (muted/secondary text)
 # ─────────────────────────────────────────────────────────────────────────────
-RESET='\033[0m'
-BOLD='\033[1m'
-DIM='\033[2m'
+# ANSI-C quoting ($'...') stores REAL escape bytes so the final output can be
+# printed with %s — never %b, which would reinterpret backslashes inside data
+# (e.g. a last message containing "C:\config" would truncate the whole line).
+RESET=$'\033[0m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
 
 # Gruvbox colors using 24-bit true color (RGB)
 # Primary text - cream
-FG='\033[38;2;235;219;178m'
+FG=$'\033[38;2;235;219;178m'
 
 # Accent colors
-GRV_YELLOW='\033[38;2;250;189;47m'
-GRV_RED='\033[38;2;251;73;52m'
-GRV_GREEN='\033[38;2;184;187;38m'
-GRV_AQUA='\033[38;2;142;192;124m'
-GRV_BLUE='\033[38;2;131;165;152m'
-GRV_PURPLE='\033[38;2;211;134;155m'
-GRV_ORANGE='\033[38;2;254;128;25m'
-GRV_GRAY='\033[38;2;146;131;116m'
+GRV_YELLOW=$'\033[38;2;250;189;47m'
+GRV_RED=$'\033[38;2;251;73;52m'
+GRV_GREEN=$'\033[38;2;184;187;38m'
+GRV_AQUA=$'\033[38;2;142;192;124m'
+GRV_BLUE=$'\033[38;2;131;165;152m'
+GRV_PURPLE=$'\033[38;2;211;134;155m'
+GRV_ORANGE=$'\033[38;2;254;128;25m'
+GRV_GRAY=$'\033[38;2;146;131;116m'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Separator Style (choose your favorite!)
@@ -147,8 +150,10 @@ parse_model() {
     elif [[ "$lower_model" == *"sonnet"* ]] || [[ "$lower_display" == *"sonnet"* ]]; then
         model_name="sonnet"
     else
-        # Fallback to display name
-        model_name="${display:-unknown}"
+        # Unknown family: use the display name as-is (it may already contain
+        # its own version — appending an extracted one would double it)
+        echo "${display:-unknown}"
+        return
     fi
 
     # Extract version from display name (e.g., "Claude Opus 4.6" → "4.6", "Fable 5" → "5")
@@ -413,13 +418,20 @@ SEVEN_DAY_SECTION=""
 EXTRA_SECTION=""
 PACE_SECTION=""
 
+# Truncate decimals (used_percentage may be fractional) and validate.
+# 5h and 7d are computed independently — one may be present without the other.
+five_pct=""
+seven_pct=""
 if [ -n "$five_used" ]; then
-    # Truncate decimals (used_percentage may be fractional) and validate
     five_pct=${five_used%.*}
     [[ "$five_pct" =~ ^[0-9]+$ ]] || five_pct=0
+fi
+if [ -n "$seven_used" ]; then
     seven_pct=${seven_used%.*}
     [[ "$seven_pct" =~ ^[0-9]+$ ]] || seven_pct=0
+fi
 
+if [ -n "$five_pct" ]; then
     # Color based on 5h percentage only (Gruvbox palette)
     if [ "$five_pct" -lt 50 ]; then
         USAGE_COLOR="${GRV_GREEN}"
@@ -451,23 +463,6 @@ if [ -n "$five_used" ]; then
         USAGE_SECTION="${USAGE_COLOR}${five_pct}%${RESET} ⏱️ ${GRV_AQUA}${reset_formatted}${RESET}"
     else
         USAGE_SECTION="⏱️ ${USAGE_COLOR}${five_pct}%${RESET}"
-    fi
-
-    # Build 7d section: only show if > 65%
-    if [ "$seven_pct" -gt 65 ]; then
-        if [ "$seven_pct" -lt 75 ]; then
-            SEVEN_DAY_COLOR="${GRV_YELLOW}"
-        else
-            SEVEN_DAY_COLOR="${GRV_RED}"
-        fi
-        SEVEN_DAY_SECTION="${SEVEN_DAY_COLOR}7d:${seven_pct}%${RESET}"
-    fi
-
-    # Extra usage section (opt-in): 🚨🚨🚨 when a usage window is exhausted
-    if [ "$SHOW_EXTRA_USAGE" = "1" ]; then
-        if [ "$five_pct" -ge 100 ] || [ "$seven_pct" -ge 100 ]; then
-            EXTRA_SECTION="🚨🚨🚨"
-        fi
     fi
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -512,6 +507,23 @@ if [ -n "$five_used" ]; then
                 PACE_SECTION="🔥"
             fi
         fi
+    fi
+fi
+
+# Build 7d section (independent of 5h): only show if > 65%
+if [ -n "$seven_pct" ] && [ "$seven_pct" -gt 65 ]; then
+    if [ "$seven_pct" -lt 75 ]; then
+        SEVEN_DAY_COLOR="${GRV_YELLOW}"
+    else
+        SEVEN_DAY_COLOR="${GRV_RED}"
+    fi
+    SEVEN_DAY_SECTION="${SEVEN_DAY_COLOR}7d:${seven_pct}%${RESET}"
+fi
+
+# Extra usage section (opt-in): 🚨🚨🚨 when a usage window is exhausted
+if [ "$SHOW_EXTRA_USAGE" = "1" ]; then
+    if [ "${five_pct:-0}" -ge 100 ] || [ "${seven_pct:-0}" -ge 100 ]; then
+        EXTRA_SECTION="🚨🚨🚨"
     fi
 fi
 
@@ -614,10 +626,10 @@ if [ -n "$USER_MESSAGE" ]; then
     SECOND_LINE="${GRV_GRAY}💬 ${USER_MESSAGE}${RESET}"
 fi
 
-# Print the final status line(s)
-printf '%b' "$OUTPUT"
+# Print the final status line(s) — %s so data is never escape-expanded
+printf '%s' "$OUTPUT"
 
 # Print second line if we have a user message
 if [ -n "$SECOND_LINE" ]; then
-    printf '\n%b' "$SECOND_LINE"
+    printf '\n%s' "$SECOND_LINE"
 fi
